@@ -1,2 +1,4 @@
 clean_midi
 clean_midi_init
+.idea
+.ipynb_checkpoints
