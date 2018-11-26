@@ -98,7 +98,6 @@ if __name__ == "__main__":
         songs.to_pickle("./statistics_with_genres.pkl")
     
     #%%
-        
     try:
         songs_as_input = pd.read_pickle("./statistics_as_input.pkl")
     except FileNotFoundError:
