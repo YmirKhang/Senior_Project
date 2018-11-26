@@ -241,9 +241,9 @@ for num_steps in range(4,7,2):
             model = Sequential()
             model.add(Dense(hidden_size,input_shape=(num_steps,14)))
             model.add(LSTM(hidden_size, return_sequences=True))
-            model.add(Dropout(0.2))
+            model.add(Dropout(dropout))
             model.add(LSTM(hidden_size, return_sequences=True))
-            model.add(Dropout(0.2))
+            model.add(Dropout(dropout))
             model.add(TimeDistributed(Dense(49)))
             model.add(Activation('softmax'))
             
