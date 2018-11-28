@@ -248,7 +248,10 @@ model.add(Activation('softmax'))
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
 checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5', verbose=1)
 
-model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs, callbacks=[checkpointer],verbose=1)
+model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
+                    validation_data=validation_data_generator.generate(),
+                    validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
+                    callbacks=[checkpointer],verbose=1)
 
 scores = model.evaluate_generator(validation_data_generator.generate(), steps=(sum(valid['length']) - valid.shape[0]*num_steps)//(batch_size), verbose=1)
 results.append(scores[1])
