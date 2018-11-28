@@ -242,7 +242,7 @@ model.add(LSTM(hidden_size, return_sequences=True))
 model.add(Dropout(dropout))
 model.add(LSTM(hidden_size, return_sequences=True))
 model.add(Dropout(dropout))
-model.add(TimeDistributed(Dense(49)))
+model.add(TimeDistributed(Dense(25)))
 model.add(Activation('softmax'))
 
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
