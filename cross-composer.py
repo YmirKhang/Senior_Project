@@ -231,33 +231,31 @@ results=[]
 
 #%%
 
-for num_steps in range(4,7,2):
-    for hidden_size in [256,512]:
-        for dropout in  [0.2,0.4]:
-            print('training for hidden: ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
-            train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
-            validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
-            
-            model = Sequential()
-            model.add(Dense(hidden_size,input_shape=(num_steps,14)))
-            model.add(LSTM(hidden_size, return_sequences=True))
-            model.add(Dropout(dropout))
-            model.add(LSTM(hidden_size, return_sequences=True))
-            model.add(Dropout(dropout))
-            model.add(TimeDistributed(Dense(49)))
-            model.add(Activation('softmax'))
-            
-            model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
-            checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5', verbose=1)
 
-            model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs, callbacks=[checkpointer],verbose=2)
+print('training for hidden: ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
+train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
+validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
 
-            scores = model.evaluate_generator(validation_data_generator.generate(), steps=(sum(valid['length']) - valid.shape[0]*num_steps)//(batch_size), verbose=2)
-            results.append(scores[1])
+model = Sequential()
+model.add(Dense(hidden_size,input_shape=(num_steps,14)))
+model.add(LSTM(hidden_size, return_sequences=True))
+model.add(Dropout(dropout))
+model.add(LSTM(hidden_size, return_sequences=True))
+model.add(Dropout(dropout))
+model.add(TimeDistributed(Dense(49)))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
+checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5', verbose=1)
+
+model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs, callbacks=[checkpointer],verbose=1)
+
+scores = model.evaluate_generator(validation_data_generator.generate(), steps=(sum(valid['length']) - valid.shape[0]*num_steps)//(batch_size), verbose=1)
+results.append(scores[1])
 
 #%%
-np.savetxt('results.out',results,delimiter=',')
-model = load_model('./training_checkpoints/model-80.hdf5')
+#np.savetxt('results.out',results,delimiter=',')
+model = load_model('./training_checkpoints/model-50.hdf5')
 #%%
 test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
 scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=2)
