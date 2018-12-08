@@ -240,7 +240,7 @@ test = songs[msk >= 0.85]
 num_steps = 4
 hidden_size = 512
 batch_size = 25
-num_epochs = 80
+num_epochs = 81
 results=[]
 dropout = 0.45
 #%%
@@ -264,7 +264,7 @@ for dropout in [0.2,0.35,0.5]:
         model.add(Activation('softmax'))
         
         model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
-        checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5', verbose=2)
+        checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5' ,verbose=1,period=10)
         
         model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                             validation_data=validation_data_generator.generate(),
