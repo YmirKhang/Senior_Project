@@ -255,7 +255,7 @@ results.append(scores[1])
 
 #%%
 #np.savetxt('results.out',results,delimiter=',')
-model = load_model('./training_checkpoints/model-50.hdf5')
+model = load_model('./training_checkpoints/model-80.hdf5')
 #%%
 test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
 scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=2)

@@ -65,7 +65,7 @@ def number_to_chord(num):
 
 def parse_chord(text, offset):
     if text[0].upper() == 'N':
-        return 25
+        return 24
     else:
         tokens = text.split('_')
         key = (note_dict[tokens[0]] + offset) % 12
@@ -177,12 +177,14 @@ class KerasBatchGenerator(object):
         self.df = df
         self.data = df.iloc[0].features
         self.mode = df.iloc[0]['mode']
+        self.class_num = int(df.iloc[0]['Class'][:2]) - 1
         self.num_steps = num_steps
         self.batch_size = batch_size
         self.song_idx = 0
         self.current_idx = 0
         self.skip_step = skip_step
         self.mode_features = self.get_mode_array()
+        #self.class_features = self.get_class_array()
         
     def get_mode_array(self):
         if self.mode == 1:
@@ -192,6 +194,14 @@ class KerasBatchGenerator(object):
         result = np.array(mode_arr)
         for i in range(self.num_steps - 1):
             result = np.concatenate((result,mode_arr),axis=0)
+        return result
+    
+    def get_class_array(self):
+        class_arr = np.zeros((1,11))
+        class_arr[0][self.class_num] = 1
+        result = np.array(class_arr)
+        for i in range(self.num_steps - 1):
+            result = np.concatenate((result,class_arr),axis=0)
         return result
         
     def generate(self):
@@ -203,32 +213,38 @@ class KerasBatchGenerator(object):
                     # reset the index back to the start of the data set
                     self.current_idx = 0
                     self.song_idx += 1
+                    print(self.song_idx)
                     if(len(self.df) == self.song_idx):
                         self.song_idx = 0
                     self.data = self.df.iloc[self.song_idx].features
                     self.mode = self.df.iloc[self.song_idx]['mode']
+                    self.class_num = int(self.df.iloc[self.song_idx]['Class'][:2]) - 1
                     self.mode_features = self.get_mode_array()
+                    #self.class_features = self.get_class_array()
+                #temp_x = np.concatenate((np.concatenate(((np.array([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]])>0.15).astype(int),self.mode_features), axis = 1),self.class_features), axis = 1)
                 temp_x = np.concatenate(([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]],self.mode_features), axis = 1)
                 x[i, :, :] = temp_x
-                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx :self.current_idx + self.num_steps ]]
+                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx +1 :self.current_idx +1+ self.num_steps ]]
                 # convert all of temp_y into a one hot representation
                 y[i, :, :] = to_categorical(temp_y, num_classes = 25)
                 self.current_idx += self.skip_step
             yield x, y
+            
 #%%
 #Create training and testing samples
+songs = songs[songs['Class'] == '03_brahms']
 msk = np.random.rand(len(songs)) 
 
 train = songs[msk < 0.7]
 valid = songs[np.logical_and(msk < 0.85, msk >= 0.7)]
 test = songs[msk >= 0.85]
 #%%
-num_steps = 6
-hidden_size = 512
+num_steps = 4
+hidden_size = 256
 batch_size = 20
 num_epochs = 60
 results=[]
-dropout = 0.2
+dropout = 0.5
 #%%
 
 
@@ -258,6 +274,7 @@ results.append(scores[1])
 
 
 #%%
+model = load_model('./training_checkpoints/model-50.hdf5')
 test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
 scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=2)
 print(scores)
