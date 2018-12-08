@@ -246,7 +246,7 @@ dropout = 0.45
 #%%
 
 for dropout in [0.2,0.35,0.5]:
-    for hidden_size in [128,256,512]:
+    for hidden_size in [64,128,256,512]:
     
         print('training for hidden: ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
         train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
