@@ -274,7 +274,8 @@ for dropout in [0.2,0.35,0.5]:
         scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
         results.append(scores[1])
 
-
+print(results)
+np.array([results]).tofile('new_results.txt',sep = ',')
 #%%
 #model = load_model('./training_checkpoints/model-50.hdf5')
 #test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
