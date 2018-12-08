@@ -1,9 +1,7 @@
 from music21 import converter, instrument, note, chord
-import matplotlib
 import pandas as pd
 import numpy as np
 from math import ceil
-from threading import Thread, Lock
 
 num_threads = 8
 
@@ -82,8 +80,6 @@ def lstm_input_from_df(df):
     df['LSTM_input'] = df.apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key), axis = 1)
 
 #%%
-    
-
 if __name__ == "__main__":
     try:
         songs = pd.read_pickle("./statistics_with_genres.pkl")
