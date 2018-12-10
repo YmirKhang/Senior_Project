@@ -203,7 +203,6 @@ class KerasBatchGenerator(object):
                     # reset the index back to the start of the data set
                     self.current_idx = 0
                     self.song_idx += 1
-                    print(self.song_idx)
                     if(len(self.df) == self.song_idx):
                         self.song_idx = 0
                     self.data = self.df.iloc[self.song_idx].features
@@ -240,7 +239,6 @@ class KerasBatchGeneratorModeless(object):
                 if self.current_idx + self.num_steps >= len(self.data):
                     self.current_idx = 0
                     self.song_idx += 1
-                    print(self.song_idx)
                     if(len(self.df) == self.song_idx):
                         self.song_idx = 0
                     self.data = self.df.iloc[self.song_idx].features
@@ -289,7 +287,7 @@ for hidden_size in [64,512]:
     model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                         validation_data=validation_data_generator.generate(),
                         validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
-                        callbacks=[checkpointer],verbose=1)
+                        callbacks=[checkpointer],verbose=2)
     
     scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
     results.append(scores[1])
@@ -315,7 +313,7 @@ for hidden_size in [64,512]:
     model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                         validation_data=validation_data_generator.generate(),
                         validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
-                        callbacks=[checkpointer],verbose=1)
+                        callbacks=[checkpointer],verbose=2)
     
     scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
     results.append(scores[1])
@@ -342,7 +340,7 @@ for hidden_size in [64,512]:
     model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                         validation_data=validation_data_generator.generate(),
                         validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
-                        callbacks=[checkpointer],verbose=1)
+                        callbacks=[checkpointer],verbose=2)
     
     scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
     results.append(scores[1])
