@@ -2,8 +2,9 @@ from music21 import converter, instrument, note, chord
 import pandas as pd
 import numpy as np
 from math import ceil
-
+from threading import Thread
 num_threads = 8
+import os
 
 note_dict = {
         'C':0,
@@ -38,32 +39,44 @@ def get_notes(text):
         val = val - 12
     return val
 
+def find_complete_song_name(artist, song):
+    for songname in os.listdir('./clean_midi/' + artist+'/'):
+        if song in songname:
+            return songname
+
 def midi_to_input(artist, song, key, mode):
-    midi = converter.parse('./clean_midi/' + artist+'/'+ song + '.mid')
-    notes_to_parse = None
-    parts = instrument.partitionByInstrument(midi)
-    print(song)
-    
-    if parts: 
-        # get the track with the most notes from the instruments
-        notes_to_parse = max(parts.parts, key=lambda p: p.__len__()).flat.notes
-    else: 
-        #single instrument
-        notes_to_parse = midi.flat.notes
-    transposed = transpose(notes_to_parse, key, mode, notes_to_parse.analyze('ambitus').noteStart, notes_to_parse.analyze('ambitus').noteEnd)
-    duration = notes_to_parse.duration.quarterLength
-    notes = np.zeros((ceil(duration*4) + 1, 74))
-    for element in transposed:
-        if isinstance(element, note.Note):
-            timestep = int(round(element.offset*4)) 
-            notes[timestep, get_notes(element.pitch.nameWithOctave)] = element.volume.velocityScalar
-            notes[timestep, 73] = max(notes[timestep, 73], element.duration.quarterLength)
-        elif isinstance(element, chord.Chord):
-            timestep = int(round(element.offset*4)) 
-            for part in element:
-                notes[timestep, get_notes(part.pitch.nameWithOctave)] = part.volume.velocityScalar
-            notes[timestep, 73] = max(notes[timestep, 73], element.duration.quarterLength)     
-    return notes
+    try:
+        midi = converter.parse('./clean_midi/' + artist+'/'+ song + '.mid')
+    except:
+        song = find_complete_song_name(artist,song)
+        midi = converter.parse('./clean_midi/' + artist+'/'+ song )
+    try:
+        notes_to_parse = None
+        parts = instrument.partitionByInstrument(midi)
+        print(song)
+        
+        if parts: 
+            # get the track with the most notes from the instruments
+            notes_to_parse = max(parts.parts, key=lambda p: p.__len__()).flat.notes
+        else: 
+            #single instrument
+            notes_to_parse = midi.flat.notes
+        transposed = transpose(notes_to_parse, key, mode, notes_to_parse.analyze('ambitus').noteStart, notes_to_parse.analyze('ambitus').noteEnd)
+        duration = notes_to_parse.duration.quarterLength
+        notes = np.zeros((ceil(duration*4) + 1, 74))
+        for element in transposed:
+            if isinstance(element, note.Note):
+                timestep = int(round(element.offset*4)) 
+                notes[timestep, get_notes(element.pitch.nameWithOctave)] = element.volume.velocityScalar
+                notes[timestep, 73] = max(notes[timestep, 73], element.duration.quarterLength)
+            elif isinstance(element, chord.Chord):
+                timestep = int(round(element.offset*4)) 
+                for part in element:
+                    notes[timestep, get_notes(part.pitch.nameWithOctave)] = part.volume.velocityScalar
+                notes[timestep, 73] = max(notes[timestep, 73], element.duration.quarterLength)     
+        return notes
+    except:
+        return None
 
 def transpose(note_stream, key, mode,spectrumStart,spectrumEnd):
     start = get_notes(spectrumStart.nameWithOctave)
@@ -77,9 +90,8 @@ def transpose(note_stream, key, mode,spectrumStart,spectrumEnd):
     return note_stream.transpose(offset)
 
 def lstm_input_from_df(df):
-    df['LSTM_input'] = df.apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key), axis = 1)
+    df['LSTM_input'] = df.apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key, row.mode), axis = 1)
 
-#%%
 if __name__ == "__main__":
     try:
         songs = pd.read_pickle("./statistics_with_genres.pkl")
@@ -95,8 +107,9 @@ if __name__ == "__main__":
     
     #%%
     try:
-        songs_as_input = pd.read_pickle("./statistics_as_input.pkl")
+        songs_as_input = pd.read_pickle("./classical_songs_as_input.pkl")
     except FileNotFoundError:
+        songs = songs[songs['is_classical']==1]
         songs_per_thread = int(len(songs)/num_threads)
         df_list = []
         thread_list = []
@@ -114,7 +127,7 @@ if __name__ == "__main__":
         for i in range(num_threads):
             thread_list[i].join()
         songs_as_input = pd.concat(df_list, ignore_index = True)
-        songs_as_input.to_pickle("./statistics_as_input.pkl")
+        songs_as_input.to_pickle("./classical_songs_as_input.pkl")
                            
     print("Finished extracting song input matrices")     
         
