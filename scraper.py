@@ -25,7 +25,6 @@ def fetch_task(self,song):
                     break
         if index is not None :
             stats = self.getSongStatistics(songlist[index]['id'])
-            print("Found statistics for song ", song, " ", self.name)
             statistic = {
                 'artist_name': self.name,
                 'song_name': song,
@@ -43,14 +42,13 @@ def fetch_task(self,song):
                 'tempo': stats['tempo'],
                 'time_signature': stats['time_signature']
             }
-            print(statistic)
             df_lock.acquire()
             global song_df
             song_df = song_df.append(statistic, ignore_index=True)
             df_lock.release()
 
-if len(sys.argv)>1:
-    token = sys.argv[1]
+
+token = "BQANYWI-S3eXGhU5wYiMtlvvyFreTHAeUmPeqy0Wen8aVKlaEC-EDscVljmgo9v_xtTdIPOwxwCSyaCkq4Hzjoe4GPgezuwJg8JyOpSB1anHGzmRzA3RUgoQ3KAdubcJ2ZbrfTFhZekH86L0rmmaJoPVizd_sQJ5CrHU_SZ2cI-02SqY7i75FpojO4UnxuIFcj53jANZqWFGAgF168fQN1afCY1oN_YAEv5DZtavVCD027NFglLvAGsG0DLQHfqNosouwEscmEM--eMrfuUh"
 midi_dir = "./clean_midi"
 not_found=0
 
@@ -70,8 +68,13 @@ class Artist():
 
     def getLocalSongNames(self):
         artistpath = midi_dir+ "/"+ self.name
-        self.local_song_names = [f.split(sep=".")[0] for f in listdir(artistpath) if isfile(join(artistpath, f))]
-        self.local_song_names = list(set(self.local_song_names))
+        raw_local_song_names = ["".join(f.split(sep=".")[:-1]) for f in listdir(artistpath) if isfile(join(artistpath, f))]
+        self.local_song_names = []
+        for song in raw_local_song_names:
+            if song[-1].isdigit() and song[-2] == ".":
+                continue
+            else:
+                self.local_song_names.append(song)
         self.local_song_names.sort()
         print("number of songs: ", len(self.local_song_names))
 

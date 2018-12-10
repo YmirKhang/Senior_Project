@@ -211,8 +211,9 @@ class KerasBatchGenerator(object):
                     #self.class_features = self.get_class_array()
                 #temp_x = np.concatenate((np.concatenate(((np.array([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]])>0.15).astype(int),self.mode_features), axis = 1),self.class_features), axis = 1)
                 temp_x = np.concatenate(([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]],self.mode_features), axis = 1)
+                temp_x[temp_x < 0.12] = 0
                 x[i, :, :] = temp_x
-                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx +1 :self.current_idx +1+ self.num_steps ]]
+                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx :self.current_idx + self.num_steps ]]
                 # convert all of temp_y into a one hot representation
                 y[i, :, :] = to_categorical(temp_y, num_classes = 25)
                 self.current_idx += self.skip_step
@@ -244,7 +245,7 @@ class KerasBatchGeneratorModeless(object):
                     self.data = self.df.iloc[self.song_idx].features
                 temp_x = [x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
                 x[i, :, :] = temp_x
-                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx +1 :self.current_idx +1+ self.num_steps ]]
+                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx :self.current_idx + self.num_steps ]]
                 # convert all of temp_y into a one hot representation
                 y[i, :, :] = to_categorical(temp_y, num_classes = 25)
                 self.current_idx += self.skip_step
@@ -261,65 +262,13 @@ test = songs[msk >= 0.85]
 num_steps = 4
 hidden_size = 256
 batch_size = 20
-num_epochs = 60
+num_epochs = 10
 results=[]
 dropout = 0.5
 #%%
-
-for hidden_size in [64,512]:
-    print('training for Modeless hidden : ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
-    train_data_generator = KerasBatchGeneratorModeless(train, num_steps, batch_size, skip_step=1)
-    validation_data_generator = KerasBatchGeneratorModeless(valid, num_steps, batch_size, skip_step=1)
-    test_data_generator = KerasBatchGeneratorModeless(test, num_steps, batch_size, skip_step=1)
     
-    model = Sequential()
-    model.add(Dense(hidden_size,input_shape=(num_steps,12)))
-    model.add(LSTM(hidden_size, return_sequences=True))
-    model.add(Dropout(dropout))
-    model.add(LSTM(hidden_size, return_sequences=True))
-    model.add(Dropout(dropout))
-    model.add(TimeDistributed(Dense(25)))
-    model.add(Activation('softmax'))
-    
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
-    checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-modeless-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5', verbose=2, period=10)
-    
-    model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
-                        validation_data=validation_data_generator.generate(),
-                        validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
-                        callbacks=[checkpointer],verbose=2)
-    
-    scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
-    results.append(scores[1])
-    
-for hidden_size in [64,512]:
-    print('training for hidden : ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
-    train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
-    validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
-    test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
-    
-    model = Sequential()
-    model.add(Dense(hidden_size,input_shape=(num_steps,14)))
-    model.add(LSTM(hidden_size, return_sequences=True))
-    model.add(Dropout(dropout))
-    model.add(LSTM(hidden_size, return_sequences=True))
-    model.add(Dropout(dropout))
-    model.add(TimeDistributed(Dense(25)))
-    model.add(Activation('softmax'))
-    
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
-    checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5', verbose=2, period=10)
-    
-    model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
-                        validation_data=validation_data_generator.generate(),
-                        validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
-                        callbacks=[checkpointer],verbose=2)
-    
-    scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
-    results.append(scores[1])
-    
-for hidden_size in [64,512]:
-    print('training for hidden normalized : ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
+for hidden_size in [64,128,256]:
+    print('training for hidden 3 layered : ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
     train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
     validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
     test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
@@ -340,7 +289,7 @@ for hidden_size in [64,512]:
     model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                         validation_data=validation_data_generator.generate(),
                         validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
-                        callbacks=[checkpointer],verbose=2)
+                        callbacks=[checkpointer],verbose=1)
     
     scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
     results.append(scores[1])

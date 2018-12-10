@@ -131,3 +131,7 @@ if __name__ == "__main__":
                            
     print("Finished extracting song input matrices")     
         
+    
+#%%
+    
+songs_as_input[songs_as_input['artist_name']=='Ludwig van Beethoven'] = songs_as_input[songs_as_input['artist_name']=='Ludwig van Beethoven'].apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key, row.mode), axis = 1)
