@@ -402,6 +402,7 @@ class BatcSongGeneratorWithCP(object):
         self.df = df
         self.metadata = df.iloc[0]
         self.data = df.iloc[0].input_features
+        self.chord_progressions = df.iloc[0].chord_progressions
         self.spotify_features = self.get_spotify_features()
         self.num_steps = num_steps
         self.batch_size = batch_size
@@ -442,8 +443,9 @@ class BatcSongGeneratorWithCP(object):
                         self.song_idx = 0
                     self.data = self.df.iloc[self.song_idx].input_features
                     self.metadata = self.df.iloc[self.song_idx]
+                    self.chord_progressions = self.df.iloc[self.song_idx].chord_progressions
                     self.spotify_features = self.get_spotify_features()
-                temp_x = [np.concatenate((x_samp[:73], self.get_duration_feature(x_samp[73]),self.spotify_features),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
+                temp_x = [np.concatenate((x_samp[:73], self.get_duration_feature(x_samp[73]),self.spotify_features,self.chord_progressions[current_idx//16]),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
                 x[i, :, :] = temp_x
                 temp_y = [np.concatenate((y_samp[:73], self.get_duration_feature(y_samp[73])),axis=0) for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
                 # convert all of temp_y into a one hot representation
@@ -470,7 +472,7 @@ train_data_generator = BatcSongGeneratorWithCP(train, num_steps, batch_size, ski
 validation_data_generator = BatcSongGeneratorWithCP(valid, num_steps, batch_size, skip_step=1)
 
 model = Sequential()
-model.add(Dense(hidden_size,input_shape=(num_steps,87)))
+model.add(Dense(hidden_size,input_shape=(num_steps,113)))
 model.add(LSTM(hidden_size, return_sequences=True))
 model.add(BatchNormalization())
 model.add(Dropout(dropout))
@@ -488,4 +490,12 @@ model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train
                     validation_data=validation_data_generator.generate(),
                     validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
                     callbacks=[checkpointer],verbose=1)
+
+#%
+
+# TODO will try binary crossentropy
+# TODO will try custom crossentopy
+# TODO add musescore to project installation
+# TODO test chord progression status
+# TODO test if duration is syntactically correct
 
