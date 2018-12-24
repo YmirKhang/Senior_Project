@@ -48,7 +48,7 @@ def fetch_task(self,song):
             df_lock.release()
 
 
-token = "BQANYWI-S3eXGhU5wYiMtlvvyFreTHAeUmPeqy0Wen8aVKlaEC-EDscVljmgo9v_xtTdIPOwxwCSyaCkq4Hzjoe4GPgezuwJg8JyOpSB1anHGzmRzA3RUgoQ3KAdubcJ2ZbrfTFhZekH86L0rmmaJoPVizd_sQJ5CrHU_SZ2cI-02SqY7i75FpojO4UnxuIFcj53jANZqWFGAgF168fQN1afCY1oN_YAEv5DZtavVCD027NFglLvAGsG0DLQHfqNosouwEscmEM--eMrfuUh"
+token = "BQAjk2_uvE4PPW150SDUgqHi7EVNwthMe1pDF2BxI4luJOjfBeRdLz0E15lpzDXmnCI1L_tawBwTwVXfG4YHOgQUL_3ea7wgFD_CGC4D_lgsPM5YnuJ_265k5nQ8HqWX2kd3z1jqTb9gFlSMoRFVrnqKLRbXMZewou1949Mw4AGKIKFd3Vio2_PFaTFEkzEkoROZECHRX2Fx3fXrVJOD9C2aQjDUXIkLzcIVFQDS9LyDUO8hqeLAiZqpLDbQ2Cc-QuAnwDS4UA9mkOvjM-hf"
 midi_dir = "./clean_midi"
 not_found=0
 
@@ -68,7 +68,8 @@ class Artist():
 
     def getLocalSongNames(self):
         artistpath = midi_dir+ "/"+ self.name
-        raw_local_song_names = ["".join(f.split(sep=".")[:-1]) for f in listdir(artistpath) if isfile(join(artistpath, f))]
+        #Fixed join with empty string clause
+        raw_local_song_names = [".".join(f.split(sep=".")[:-1]) for f in listdir(artistpath) if isfile(join(artistpath, f))]
         self.local_song_names = []
         for song in raw_local_song_names:
             if song[-1].isdigit() and song[-2] == ".":

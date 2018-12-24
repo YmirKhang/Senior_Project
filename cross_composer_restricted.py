@@ -49,8 +49,8 @@ number_dict = {
 def number_to_chord(num):
     if num == 24:
         return 'N'
-    key = number_dict[num//4]
-    offset = num % 4
+    key = number_dict[num//2]
+    offset = num % 2
     if offset == 0:
         return key + "MAJ"
     if offset == 1:
@@ -173,7 +173,7 @@ except FileNotFoundError:
 #%%
 class KerasBatchGenerator(object):
     
-    def __init__(self, df, num_steps, batch_size, skip_step=5):
+    def __init__(self, df, num_steps, batch_size, skip_step=1):
         self.df = df
         self.data = df.iloc[0].features
         self.mode = df.iloc[0]['mode']
@@ -215,7 +215,7 @@ class KerasBatchGenerator(object):
                 temp_x = np.concatenate(([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]],self.mode_features), axis = 1)
                 temp_x[temp_x < 0.12] = 0
                 x[i, :, :] = temp_x
-                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx :self.current_idx + self.num_steps ]]
+                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx +1 :self.current_idx + self.num_steps +1 ]]
                 # convert all of temp_y into a one hot representation
                 y[i, :, :] = to_categorical(temp_y, num_classes = 25)
                 self.current_idx += self.skip_step
@@ -224,7 +224,7 @@ class KerasBatchGenerator(object):
 #%%
 class KerasBatchGeneratorModeless(object):
     
-    def __init__(self, df, num_steps, batch_size, skip_step=5):
+    def __init__(self, df, num_steps, batch_size, skip_step=1):
         self.df = df
         self.data = df.iloc[0].features
         self.class_num = int(df.iloc[0]['Class'][:2]) - 1
@@ -247,7 +247,7 @@ class KerasBatchGeneratorModeless(object):
                     self.data = self.df.iloc[self.song_idx].features
                 temp_x = [x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
                 x[i, :, :] = temp_x
-                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx :self.current_idx + self.num_steps ]]
+                temp_y = [y_samp[1] for y_samp in self.data[self.current_idx + 1 :self.current_idx + self.num_steps + 1 ]]
                 # convert all of temp_y into a one hot representation
                 y[i, :, :] = to_categorical(temp_y, num_classes = 25)
                 self.current_idx += self.skip_step
@@ -264,34 +264,55 @@ test = songs[msk >= 0.85]
 num_steps = 4
 hidden_size = 256
 batch_size = 20
-num_epochs = 10
+num_epochs = 20
 results=[]
 dropout = 0.5
 #%%
     
-for hidden_size in [64,128,256]:
-    print('training for hidden 3 layered : ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
-    train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
-    validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
-    test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
-    
-    model = Sequential()
-    model.add(Dense(hidden_size,input_shape=(num_steps,14)))
-    model.add(LSTM(hidden_size, return_sequences=True))
-    model.add(BatchNormalization())
-    model.add(Dropout(dropout))
-    model.add(LSTM(hidden_size, return_sequences=True))
-    model.add(Dropout(dropout))
-    model.add(TimeDistributed(Dense(25)))
-    model.add(Activation('softmax'))
-    
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
-    checkpointer = ModelCheckpoint(filepath='./training_checkpoints' + '/model-normalized-{epoch:02d}'+'steps=' + str(num_steps)+'hidden='+str(hidden_size) +'dropout='+ str(dropout)+ '.hdf5', verbose=2, period=10)
-    
-    model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
-                        validation_data=validation_data_generator.generate(),
-                        validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
-                        callbacks=[checkpointer],verbose=1)
-    
-    scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
-    results.append(scores[1])
+train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
+validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
+test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
+
+#%%
+
+model = Sequential()
+model.add(Dense(hidden_size,input_shape=(num_steps,14)))
+model.add(LSTM(hidden_size, return_sequences=True))
+model.add(BatchNormalization())
+model.add(Dropout(dropout))
+model.add(LSTM(hidden_size, return_sequences=True))
+model.add(Dropout(dropout))
+model.add(TimeDistributed(Dense(25)))
+model.add(Activation('softmax'))
+
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
+checkpointer = ModelCheckpoint(filepath='./training_checkpoints/model_final_plus_1.hdf5', verbose=2, period=10)
+
+model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
+                    validation_data=validation_data_generator.generate(),
+                    validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
+                    callbacks=[checkpointer],verbose=1)
+
+scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
+results.append(scores[1])
+
+#%%
+dummy_iters = 0
+example_test_generator = KerasBatchGenerator(test, num_steps, 1,
+                                                     skip_step=1)
+
+model = load_model('./training_checkpoints/model_final.hdf5')
+print("Test data:")
+for i in range(dummy_iters):
+    dummy = next(example_test_generator.generate())
+num_predict = 10
+true_print_out = "Actual words: "
+pred_print_out = "Predicted words: "
+for i in range(num_predict):
+    data = next(example_test_generator.generate())
+    prediction = model.predict(data[0])
+    predict_word = np.argmax(prediction[:, num_steps-1, :])
+    true_print_out += number_to_chord(test.iloc[0].features[num_steps + dummy_iters + i -1][1]) + " "
+    pred_print_out += number_to_chord(predict_word) + " "
+print(true_print_out)
+print(pred_print_out)
