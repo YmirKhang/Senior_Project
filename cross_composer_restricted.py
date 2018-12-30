@@ -212,8 +212,12 @@ class KerasBatchGenerator(object):
                     self.mode_features = self.get_mode_array()
                     #self.class_features = self.get_class_array()
                 #temp_x = np.concatenate((np.concatenate(((np.array([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]])>0.15).astype(int),self.mode_features), axis = 1),self.class_features), axis = 1)
-                temp_x = np.concatenate(([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]],self.mode_features), axis = 1)
-                temp_x[temp_x < 0.12] = 0
+                modeless_x = np.array([x_samp[2] for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]])
+                modeless_x[modeless_x < 0.08] = 0
+                print(modeless_x.shape)
+                if sum(modeless_x) != 0:
+                    modeless_x = [j/sum(modeless_x) for j in modeless_x]
+                temp_x = np.concatenate((modeless_x,self.mode_features), axis = 1)
                 x[i, :, :] = temp_x
                 temp_y = [y_samp[1] for y_samp in self.data[self.current_idx +1 :self.current_idx + self.num_steps +1 ]]
                 # convert all of temp_y into a one hot representation
@@ -264,7 +268,7 @@ test = songs[msk >= 0.85]
 num_steps = 4
 hidden_size = 256
 batch_size = 20
-num_epochs = 20
+num_epochs = 11
 results=[]
 dropout = 0.5
 #%%
@@ -286,7 +290,7 @@ model.add(TimeDistributed(Dense(25)))
 model.add(Activation('softmax'))
 
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['categorical_accuracy'])
-checkpointer = ModelCheckpoint(filepath='./training_checkpoints/model_final_plus_1.hdf5', verbose=2, period=10)
+checkpointer = ModelCheckpoint(filepath='./training_checkpoints/model_with_threshold.hdf5', verbose=2, period=10)
 
 model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                     validation_data=validation_data_generator.generate(),

@@ -13,6 +13,7 @@ import keras.backend as K
 
 
 DURATION_OFFSET = 73
+num_steps = 4
 
 note_dict = {
         'C':0,
@@ -265,12 +266,15 @@ def get_chord_progressions_from_song(notes, mode):
         mode_feature= np.array([0,1])
     chroma_progression = []
     for i in range(0,len(notes),16):
-        chroma_progression.append(np.concatenate((chroma_from_slice(notes[i:i+16]),mode_feature),axis=1))
-    chord_progression = np.array([max_correl_chord(chord,False) for chord in chroma_progression[:3]])
-    predicted_chords = cp_model.predict(chroma_progression,batch_size = len(chroma_progression) - 1)
-    chord_progression.append(predicted_chords)
-    chord_progression.append()
-    return chord_progression
+        chroma = chroma_from_slice(notes[i:i+16])
+        chroma_with_feature = np.concatenate((chroma,mode_feature),axis=0)
+        chroma_progression.append(chroma_with_feature)
+    chord_progression = [max_correl_chord(chord, True) for chord in chroma_progression[:num_steps - 1]]
+    for i in range(0,len(chroma_progression)-num_steps + 1):
+        raw_prediction = cp_model.predict(np.array(chroma_progression[i:i + num_steps]).reshape(1,num_steps,14))
+        prediction = (raw_prediction[0][3] == raw_prediction[0][3].max(axis=0)).astype(int)
+        chord_progression.append(prediction)
+    return np.array(chord_progression)[:, num_steps-1, :]
 
 #%%
 
@@ -290,6 +294,9 @@ print("Finished extracting song input matrices")
 #%%
 classical_songs = classical_songs[classical_songs['input_features'].isnull() != True] 
 classical_songs['length'] = classical_songs.apply(lambda row: len(row.input_features), axis = 1)
+
+cs = classical_songs.iloc[15]
+get_chord_progression(cs['input_features'],cs['mode'])
 #%%
 #songs_as_input[songs_as_input['artist_name']=='Ludwig van Beethoven'] = songs_as_input[songs_as_input['artist_name']=='Ludwig van Beethoven'].apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key, row.mode), axis = 1)
 
