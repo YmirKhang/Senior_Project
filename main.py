@@ -37,6 +37,21 @@ def string_to_list(row):
     return [s.strip()[1:-1] for s in row['genres'][1:-1].split(",")]
 
 # Function to get numerical note value from text
+# This is between C3 and c6
+def get_notes_restricted(text):
+    val = (int(text[-1]) - 3) * 12
+    val = val + note_dict[text[0]]
+    if text[1] == '-':
+        val = val -1
+    elif text[1] == '#':
+        val = val + 1
+    if val < 0:
+        val = val % 12
+    while val > 36:
+        val = val -12
+    return val
+    
+#This is between C1 and C7
 def get_notes(text):
     val = (int(text[-1]) - 1) * 12
     val = val + note_dict[text[0]]
@@ -86,6 +101,43 @@ def midi_to_input(artist, song, key, mode):
                 for part in element:
                     notes[timestep, get_notes(part.pitch.nameWithOctave)] = 1
                 notes[timestep, 73] = max(notes[timestep, 73], element.duration.quarterLength)     
+        return notes
+    except:
+        return None
+    
+def midi_to_input_restricted(artist, song, key, mode):
+    try:
+        midi = converter.parse('./clean_midi/' + artist+'/'+ song + '.mid')
+    except:
+        try:
+            song = find_complete_song_name(artist,song)
+            midi = converter.parse('./clean_midi/' + artist+'/'+ song )
+        except:
+            return None
+    try:
+        notes_to_parse = None
+        parts = instrument.partitionByInstrument(midi)
+        print(song)
+        
+        if parts: 
+            # get the track with the most notes from the instruments
+            notes_to_parse = max(parts.parts, key=lambda p: p.__len__()).flat.notes
+        else: 
+            #single instrument
+            notes_to_parse = midi.flat.notes
+        transposed = transpose(notes_to_parse, key, mode, notes_to_parse.analyze('ambitus').noteStart, notes_to_parse.analyze('ambitus').noteEnd)
+        duration = notes_to_parse.duration.quarterLength
+        notes = np.zeros((ceil(duration*4) + 1, 38))
+        for element in transposed:
+            if isinstance(element, note.Note):
+                timestep = int(round(element.offset*4)) 
+                notes[timestep, get_notes_restricted(element.pitch.nameWithOctave)] = 1
+                notes[timestep, 37] = max(notes[timestep, 37], element.duration.quarterLength)
+            elif isinstance(element, chord.Chord):
+                timestep = int(round(element.offset*4)) 
+                for part in element:
+                    notes[timestep, get_notes_restricted(part.pitch.nameWithOctave)] = 1
+                notes[timestep, 37] = max(notes[timestep, 37], element.duration.quarterLength)     
         return notes
     except:
         return None
@@ -258,7 +310,7 @@ def chromas_from_midi(midi):
         chromas.append(chroma_from_slice(midi[i:i+16]))
     return chromas
 
-def get_chord_progressions_from_song(notes, mode):
+def get_chord_progressions_with_model(notes, mode):
     cp_model = load_model('./training_checkpoints/model_final.hdf5')
     if mode == MODE_MIN:
         mode_feature= np.array([1,0])
@@ -276,6 +328,14 @@ def get_chord_progressions_from_song(notes, mode):
         chord_progression.append(prediction)
     return np.array(chord_progression)[:, num_steps-1, :]
 
+def get_chord_progressions_from_song(notemidi_to_inputs):
+    chroma_progression = []
+    for i in range(0,len(notes),16):
+        chroma = chroma_from_slice(notes[i:i+16])
+        chroma_progression.append(chroma)
+    chord_progressions = [max_correl_chord(chord,True) for chord in chroma_progression]
+    return chord_progressions
+
 #%%
 
 def get_chord_progression(feature_matrix, mode):
@@ -289,14 +349,24 @@ except FileNotFoundError:
     classical_songs['input_features'] = classical_songs.apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key, row.mode), axis = 1)
     classical_songs.to_pickle("./classical_songs_as_input.pkl")
                        
+try:
+    restricted_classical_songs = pd.read_pickle("./restricted_classical_songs_as_input.pkl")
+except FileNotFoundError:
+    restricted_classical_songs = classical_songs.copy()
+    restricted_classical_songs.drop(['input_features'] , axis = 1)
+    restricted_classical_songs['input_features'] = restricted_classical_songs.apply(lambda row: midi_to_input_restricted(row.artist_name, row.song_name, row.key, row.mode), axis = 1)
+    restricted_classical_songs.to_pickle("./restricted_classical_songs_as_input.pkl")
 print("Finished extracting song input matrices")     
     
 #%%
 classical_songs = classical_songs[classical_songs['input_features'].isnull() != True] 
 classical_songs['length'] = classical_songs.apply(lambda row: len(row.input_features), axis = 1)
 
-cs = classical_songs.iloc[15]
-get_chord_progression(cs['input_features'],cs['mode'])
+restricted_classical_songs = restricted_classical_songs[restricted_classical_songs['input_features'].isnull() != True] 
+restricted_classical_songs['length'] = restricted_classical_songs.apply(lambda row: len(row.input_features), axis = 1)
+
+
+
 #%%
 #songs_as_input[songs_as_input['artist_name']=='Ludwig van Beethoven'] = songs_as_input[songs_as_input['artist_name']=='Ludwig van Beethoven'].apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key, row.mode), axis = 1)
 
@@ -322,7 +392,10 @@ class BatcSongGenerator(object):
     def get_duration_feature(self,duration):
         # To represent the duration in a categorical format
         duration = int(min(round(4*duration),16))
-        return np.array([int(char) for char in bin(duration)[2:].zfill(5)])
+        feature = np.zeros(16)
+        if duration != 0:
+            feature[duration-1] = 1
+        return feature
     
     def get_spotify_features(self):
         features = np.zeros(9)
@@ -338,10 +411,10 @@ class BatcSongGenerator(object):
         return features
         
     def generate(self):
-        # input 73 for notes, 5 for duration, 9 for spotify features
-        x = np.zeros((self.batch_size, self.num_steps, 87))
-        # output 73 for notes, 5 for duration 
-        y = np.zeros((self.batch_size, self.num_steps, 78))
+        # input 73 for notes, 16 for duration, 9 for spotify features
+        x = np.zeros((self.batch_size, self.num_steps, 98))
+        # output 73 for notes, 16 for duration 
+        y = np.zeros((self.batch_size, self.num_steps, 89))
         while True:
             for i in range(self.batch_size):
                 if self.current_idx + self.num_steps >= len(self.data):
@@ -379,13 +452,13 @@ train_data_generator = BatcSongGenerator(train, num_steps, batch_size, skip_step
 validation_data_generator = BatcSongGenerator(valid, num_steps, batch_size, skip_step=1)
 
 model = Sequential()
-model.add(Dense(hidden_size,input_shape=(num_steps,87)))
+model.add(Dense(hidden_size,input_shape=(num_steps,98)))
 model.add(LSTM(hidden_size, return_sequences=True))
 model.add(BatchNormalization())
 model.add(Dropout(dropout))
 model.add(LSTM(hidden_size, return_sequences=True))
 model.add(Dropout(dropout))
-model.add(TimeDistributed(Dense(78)))
+model.add(TimeDistributed(Dense(89)))
 model.add(Activation('softmax'))
 
 #%% Start the training with evaluation after each epoch
@@ -403,13 +476,12 @@ model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train
 
 #%%
 
-class BatcSongGeneratorWithCP(object):
+class BatcSongGeneratorRestricted(object):
     
     def __init__(self, df, num_steps, batch_size, skip_step=5):
         self.df = df
         self.metadata = df.iloc[0]
         self.data = df.iloc[0].input_features
-        self.chord_progressions = df.iloc[0].chord_progressions
         self.spotify_features = self.get_spotify_features()
         self.num_steps = num_steps
         self.batch_size = batch_size
@@ -420,7 +492,10 @@ class BatcSongGeneratorWithCP(object):
     def get_duration_feature(self,duration):
         # To represent the duration in a categorical format
         duration = int(min(round(4*duration),16))
-        return np.array([int(char) for char in bin(duration)[2:].zfill(5)])
+        feature = np.zeros(16)
+        if duration != 0:
+            feature[duration-1] = 1
+        return feature
     
     def get_spotify_features(self):
         features = np.zeros(9)
@@ -433,14 +508,13 @@ class BatcSongGeneratorWithCP(object):
         features[6] = self.metadata.liveness
         features[7] = self.metadata.valence
         features[8] = self.metadata.tempo
-        features[8] = self.metadata.mode
         return features
         
     def generate(self):
-        # input 73 for notes, 5 for duration, 10 for spotify features, and 25 for chord progressions
-        x = np.zeros((self.batch_size, self.num_steps, 113))
-        # output 73 for notes, 5 for duration 
-        y = np.zeros((self.batch_size, self.num_steps, 78))
+        # input 37 for notes, 16 for duration, 9 for spotify features
+        x = np.zeros((self.batch_size, self.num_steps, 62))
+        # output 37 for notes, 16 for duration 
+        y = np.zeros((self.batch_size, self.num_steps, 53))
         while True:
             for i in range(self.batch_size):
                 if self.current_idx + self.num_steps >= len(self.data):
@@ -450,11 +524,10 @@ class BatcSongGeneratorWithCP(object):
                         self.song_idx = 0
                     self.data = self.df.iloc[self.song_idx].input_features
                     self.metadata = self.df.iloc[self.song_idx]
-                    self.chord_progressions = self.df.iloc[self.song_idx].chord_progressions
                     self.spotify_features = self.get_spotify_features()
-                temp_x = [np.concatenate((x_samp[:73], self.get_duration_feature(x_samp[73]),self.spotify_features,self.chord_progressions[current_idx//16]),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
+                temp_x = [np.concatenate((x_samp[:37], self.get_duration_feature(x_samp[37]),self.spotify_features),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
                 x[i, :, :] = temp_x
-                temp_y = [np.concatenate((y_samp[:73], self.get_duration_feature(y_samp[73])),axis=0) for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
+                temp_y = [np.concatenate((y_samp[:37], self.get_duration_feature(y_samp[37])),axis=0) for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
                 # convert all of temp_y into a one hot representation
                 y[i, :, :] = temp_y
                 self.current_idx += self.skip_step
@@ -475,17 +548,17 @@ num_epochs = 20
 results=[]
 dropout = 0.5
  
-train_data_generator = BatcSongGeneratorWithCP(train, num_steps, batch_size, skip_step=1)
-validation_data_generator = BatcSongGeneratorWithCP(valid, num_steps, batch_size, skip_step=1)
+train_data_generator = BatcSongGeneratorRestricted(train, num_steps, batch_size, skip_step=1)
+validation_data_generator = BatcSongGeneratorRestricted(valid, num_steps, batch_size, skip_step=1)
 
 model = Sequential()
-model.add(Dense(hidden_size,input_shape=(num_steps,113)))
+model.add(Dense(hidden_size,input_shape=(num_steps,62)))
 model.add(LSTM(hidden_size, return_sequences=True))
 model.add(BatchNormalization())
 model.add(Dropout(dropout))
 model.add(LSTM(hidden_size, return_sequences=True))
 model.add(Dropout(dropout))
-model.add(TimeDistributed(Dense(78)))
+model.add(TimeDistributed(Dense(53)))
 model.add(Activation('softmax'))
 
 #%% Start the training with evaluation after each epoch
@@ -503,6 +576,5 @@ model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train
 # TODO will try binary crossentropy
 # TODO will try custom crossentopy
 # TODO add musescore to project installation
-# TODO test chord progression status
 # TODO test if duration is syntactically correct
 
