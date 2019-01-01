@@ -6,10 +6,11 @@ from threading import Thread
 num_threads = 8
 import os
 from keras.utils import to_categorical
-from keras.layers import LSTM, Dropout, Dense, Activation, TimeDistributed, BatchNormalization
-from keras.models import Sequential, load_model
+from keras.layers import LSTM, Dropout, Dense, Activation, TimeDistributed, BatchNormalization, Concatenate, Input, Lambda
+from keras.models import Sequential, load_model, Model
 from keras.callbacks import ModelCheckpoint
 import keras.backend as K
+import sys
 
 
 DURATION_OFFSET = 73
@@ -38,9 +39,10 @@ def string_to_list(row):
 
 # Function to get numerical note value from text
 # This is between C3 and c6
-def get_notes_restricted(text):
+def get_notes_restricted(text, chord_key = 0):
     val = (int(text[-1]) - 3) * 12
     val = val + note_dict[text[0]]
+    val = val - chord_key
     if text[1] == '-':
         val = val -1
     elif text[1] == '#':
@@ -105,7 +107,7 @@ def midi_to_input(artist, song, key, mode):
     except:
         return None
     
-def midi_to_input_restricted(artist, song, key, mode):
+def midi_to_input_restricted(artist, song, key, mode, chord_progression=None):
     try:
         midi = converter.parse('./clean_midi/' + artist+'/'+ song + '.mid')
     except:
@@ -130,8 +132,14 @@ def midi_to_input_restricted(artist, song, key, mode):
         notes = np.zeros((ceil(duration*4) + 1, 38))
         for element in transposed:
             if isinstance(element, note.Note):
-                timestep = int(round(element.offset*4)) 
-                notes[timestep, get_notes_restricted(element.pitch.nameWithOctave)] = 1
+                timestep = int(round(element.offset*4))
+                if chord_progression is not None:
+                    chord = chord_progression[timestep//16]
+                    chord_offset = next((i for i, x in enumerate(chord) if x), None)
+                    chord_offset %= 12
+                else:
+                    chord_offset = 0
+                notes[timestep, get_notes_restricted(element.pitch.nameWithOctave, chord_offset)] = 1
                 notes[timestep, 37] = max(notes[timestep, 37], element.duration.quarterLength)
             elif isinstance(element, chord.Chord):
                 timestep = int(round(element.offset*4)) 
@@ -328,7 +336,7 @@ def get_chord_progressions_with_model(notes, mode):
         chord_progression.append(prediction)
     return np.array(chord_progression)[:, num_steps-1, :]
 
-def get_chord_progressions_from_song(notemidi_to_inputs):
+def get_chord_progressions_from_song(notes):
     chroma_progression = []
     for i in range(0,len(notes),16):
         chroma = chroma_from_slice(notes[i:i+16])
@@ -377,7 +385,7 @@ def get_weighted_loss(y_true, y_pred):
     return K.sum( K.abs( (y_true- y_pred) * (K.log(y_true / y_pred))), axis=-1)
 
 class BatcSongGenerator(object):
-    
+
     def __init__(self, df, num_steps, batch_size, skip_step=5):
         self.df = df
         self.metadata = df.iloc[0]
@@ -434,6 +442,10 @@ class BatcSongGenerator(object):
             yield x, y   
 #%% Split Songs
 
+restricted_classical_songs = restricted_classical_songs[restricted_classical_songs.artist_name == "Bach Johann Sebastian"]
+
+#%%
+
 msk = np.random.rand(len(classical_songs)) 
 
 train = classical_songs[msk < 0.8]
@@ -441,16 +453,18 @@ valid = classical_songs[msk >= 0.8]
 
 #%% Build the songs model
 
-num_steps = 16
-hidden_size = 128
+num_steps = 32
+hidden_size = 256
 batch_size = 20
-num_epochs = 20
+num_epochs = 5
 results=[]
 dropout = 0.5
- 
-train_data_generator = BatcSongGenerator(train, num_steps, batch_size, skip_step=1)
-validation_data_generator = BatcSongGenerator(valid, num_steps, batch_size, skip_step=1)
+#%%
 
+train_data_generator = BatcSongGenerator(train, num_steps, batch_size, skip_step=1)
+
+validation_data_generator = BatcSongGenerator(valid, num_steps, batch_size, skip_step=1)
+#%%
 model = Sequential()
 model.add(Dense(hidden_size,input_shape=(num_steps,98)))
 model.add(LSTM(hidden_size, return_sequences=True))
@@ -459,12 +473,12 @@ model.add(Dropout(dropout))
 model.add(LSTM(hidden_size, return_sequences=True))
 model.add(Dropout(dropout))
 model.add(TimeDistributed(Dense(89)))
-model.add(Activation('softmax'))
+model.add(Activation('sigmoid'))
 
 #%% Start the training with evaluation after each epoch
 
 model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['binary_accuracy'])
-checkpointer = ModelCheckpoint(filepath='./song_checkpoints/no_chord_progression.hdf5', verbose=2, period=10)
+checkpointer = ModelCheckpoint(filepath='./song_checkpoints/no_chord_progression.hdf5', verbose=1, period=10)
 
 model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                     validation_data=validation_data_generator.generate(),
@@ -474,9 +488,30 @@ model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train
 # Disble model evaluation for this time as we will be doing model evaluation between epochs
 #scores = model.evaluate_generator(test_data_generator.generate(), steps=(sum(test['length']) - test.shape[0]*num_steps)//(batch_size), verbose=1)
 
+
+#%% Tester
+model = load_model('./song_checkpoints/no_chord_progression.hdf5')
+#%%
+threshold = 0.1
+validation_data_generator = BatcSongGenerator(valid, num_steps, 1, skip_step=1)
+
+dummy_iters = 256
+
+for i in range(dummy_iters):
+    dummy = next(validation_data_generator.generate())
+    
+    predictions = []
+    true_outputs = []
+for i in range(16):
+    data = next(validation_data_generator.generate())
+    prediction = model.predict(data[0])
+    predict_note = prediction[0][num_steps - 1]
+    true_note = data[1][0][num_steps-1]
+    predictions.append(np.argwhere(predict_note > threshold))
+    true_outputs.append(np.argwhere(true_note > threshold))
 #%%
 
-class BatcSongGeneratorRestricted(object):
+class BatchSongGeneratorRestricted(object):
     
     def __init__(self, df, num_steps, batch_size, skip_step=5):
         self.df = df
@@ -492,9 +527,8 @@ class BatcSongGeneratorRestricted(object):
     def get_duration_feature(self,duration):
         # To represent the duration in a categorical format
         duration = int(min(round(4*duration),16))
-        feature = np.zeros(16)
-        if duration != 0:
-            feature[duration-1] = 1
+        feature = np.zeros(17)
+        feature[duration] = 1
         return feature
     
     def get_spotify_features(self):
@@ -511,10 +545,11 @@ class BatcSongGeneratorRestricted(object):
         return features
         
     def generate(self):
-        # input 37 for notes, 16 for duration, 9 for spotify features
-        x = np.zeros((self.batch_size, self.num_steps, 62))
-        # output 37 for notes, 16 for duration 
-        y = np.zeros((self.batch_size, self.num_steps, 53))
+        # input 37 for notes, 17 for duration, 9 for spotify features
+        x = np.zeros((self.batch_size, self.num_steps, 63))
+        # output 37 for notes, 17 for duration 
+        y1 = np.zeros((self.batch_size, self.num_steps, 37))
+        y2 = np.zeros((self.batch_size, self.num_steps, 17))
         while True:
             for i in range(self.batch_size):
                 if self.current_idx + self.num_steps >= len(self.data):
@@ -527,43 +562,48 @@ class BatcSongGeneratorRestricted(object):
                     self.spotify_features = self.get_spotify_features()
                 temp_x = [np.concatenate((x_samp[:37], self.get_duration_feature(x_samp[37]),self.spotify_features),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
                 x[i, :, :] = temp_x
-                temp_y = [np.concatenate((y_samp[:37], self.get_duration_feature(y_samp[37])),axis=0) for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
+                temp_y1 = [ y_samp[:37] for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
+                temp_y2 = [ self.get_duration_feature(y_samp[37]) for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
                 # convert all of temp_y into a one hot representation
-                y[i, :, :] = temp_y
+                y1[i, :, :] = temp_y1
+                y2[i, :, :] = temp_y2
                 self.current_idx += self.skip_step
-            yield x, y   
+            yield x, [y1,y2]   
 #%% Split Songs
 
-msk = np.random.rand(len(classical_songs)) 
+msk = np.random.rand(len(restricted_classical_songs)) 
 
-train = classical_songs[msk < 0.8]
-valid = classical_songs[msk >= 0.8]
+train = restricted_classical_songs[msk < 0.8]
+valid = restricted_classical_songs[msk >= 0.8]
 
 #%% Build the songs model
 
-num_steps = 16
-hidden_size = 128
+num_steps = 32
+hidden_size = 256
 batch_size = 20
-num_epochs = 20
+num_epochs = 5
 results=[]
 dropout = 0.5
  
-train_data_generator = BatcSongGeneratorRestricted(train, num_steps, batch_size, skip_step=1)
-validation_data_generator = BatcSongGeneratorRestricted(valid, num_steps, batch_size, skip_step=1)
+train_data_generator = BatchSongGeneratorRestricted(train, num_steps, batch_size, skip_step=1)
+validation_data_generator = BatchSongGeneratorRestricted(valid, num_steps, batch_size, skip_step=1)
 
-model = Sequential()
-model.add(Dense(hidden_size,input_shape=(num_steps,62)))
-model.add(LSTM(hidden_size, return_sequences=True))
-model.add(BatchNormalization())
-model.add(Dropout(dropout))
-model.add(LSTM(hidden_size, return_sequences=True))
-model.add(Dropout(dropout))
-model.add(TimeDistributed(Dense(53)))
-model.add(Activation('softmax'))
+a = Input(shape = (num_steps, 63))
+d1 = Dense(hidden_size,input_shape=(num_steps,63))(a)
+l1 = LSTM(hidden_size, return_sequences=True)(d1)
+bn = BatchNormalization() (l1)
+do1 = Dropout(dropout)(bn)
+l2 = LSTM(hidden_size, return_sequences=True)(do1)
+do2 = Dropout(dropout)(l2)
+td1 = TimeDistributed(Dense(37, activation = 'sigmoid'))(do2)
+td2 = TimeDistributed(Dense(17, activation = 'softmax'))(do2)
+out1 = Lambda(lambda x:x, name = "notes")(td1)
+out2 = Lambda(lambda x:x, name = "times")(td2)
+model = Model(inputs =a, outputs = [out1 , out2])
 
 #%% Start the training with evaluation after each epoch
 
-model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['binary_accuracy'])
+model.compile(loss=['binary_crossentropy','categorical_crossentropy'], loss_weights = [1, 0.2], optimizer='adam', metrics={'notes':'binary_accuracy','times':'categorical_accuracy'})
 checkpointer = ModelCheckpoint(filepath='./song_checkpoints/no_chord_progression.hdf5', verbose=2, period=10)
 
 model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
@@ -571,7 +611,25 @@ model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train
                     validation_steps=(sum(valid['length'])-valid.shape[0] * num_steps)//(batch_size),
                     callbacks=[checkpointer],verbose=1)
 
-#%
+#%%
+
+threshold = 0.1
+validation_data_generator = BatchSongGeneratorRestricted(valid, num_steps, 1, skip_step=1)
+
+dummy_iters = 512
+
+for i in range(dummy_iters):
+    dummy = next(validation_data_generator.generate())
+    
+    predictions = []
+    true_outputs = []
+for i in range(16):
+    data = next(validation_data_generator.generate())
+    prediction = model.predict(data[0])
+    predict_note = prediction[0][0][num_steps - 1]
+    true_note = data[1][0][0][num_steps-1]
+    predictions.append(np.argwhere(predict_note > threshold))
+    true_outputs.append(np.argwhere(true_note > threshold))
 
 # TODO will try binary crossentropy
 # TODO will try custom crossentopy
