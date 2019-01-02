@@ -136,8 +136,9 @@ def midi_to_input_restricted(artist, song, key, mode, chord_progression=None):
             if isinstance(element, note.Note):
                 timestep = int(round(element.offset*4))
                 if chord_progression is not None:
-                    chord = chord_progression[timestep//16]
-                    chord_offset = next((i for i, x in enumerate(chord) if x), None)
+                    predicted_chord = chord_progression[timestep//16]
+                    chord_offset = next((i for i, x in enumerate(predicted_chord) if x), None)
+                    chord_offset = chord_offset // 2
                     chord_offset %= 12
                 else:
                     chord_offset = 0
@@ -146,11 +147,20 @@ def midi_to_input_restricted(artist, song, key, mode, chord_progression=None):
             elif isinstance(element, chord.Chord):
                 timestep = int(round(element.offset*4)) 
                 for part in element:
-                    notes[timestep, get_notes_restricted(part.pitch.nameWithOctave)] = 1
+                    if chord_progression is not None:
+                        predicted_chord = chord_progression[timestep//16]
+                        chord_offset = next((i for i, x in enumerate(predicted_chord) if x), None)
+                        chord_offset = chord_offset // 2
+                        chord_offset %= 12
+                    else:
+                        chord_offset = 0
+                    notes[timestep, get_notes_restricted(part.pitch.nameWithOctave, chord_offset)] = 1
                 notes[timestep, 37] = max(notes[timestep, 37], element.duration.quarterLength)     
         return notes
-    except:
+    except Exception as ex:
+        print(ex)
         return None
+    
 
 def transpose(note_stream, key, mode,spectrumStart,spectrumEnd):
     start = get_notes(spectrumStart.nameWithOctave)
@@ -164,17 +174,6 @@ def transpose(note_stream, key, mode,spectrumStart,spectrumEnd):
 def lstm_input_from_df(df):
     df['LSTM_input'] = df.apply(lambda row: midi_to_input(row.artist_name, row.song_name, row.key, row.mode), axis = 1)
 
-
-songs = pd.read_csv('./statistics.csv')
-songs['genres'] = songs.apply(lambda row: string_to_list(row),axis=1)
-genre_list = ['pop','rock','jazz','soul','classical','electronic','dance','metal','disco', 'funk']
-
-for genre in genre_list:
-    songs['is_' + genre] = songs.apply(lambda row: genre_extractor(row, genre), axis = 1)
-    
-classical_songs = songs[songs['is_classical']==1]
-classical_songs = classical_songs[classical_songs['is_rock'] == 0]
-classical_songs = classical_songs[classical_songs['time_signature'] == 4]
 
 #%% Helper functions
 
@@ -287,7 +286,7 @@ def parse_chord_restricted(text, offset):
 def chroma_from_slice(note_slice):
     vector = [0,0,0,0,0,0,0,0,0,0,0,0]
     for timestep in note_slice:
-        for note in range(73):
+        for note in range(37):
             if(timestep[note]!=0):
                 vector[note%12] += 1
     if sum(vector) != 0:
@@ -376,21 +375,33 @@ restricted_classical_songs = restricted_classical_songs[restricted_classical_son
 restricted_classical_songs['length'] = restricted_classical_songs.apply(lambda row: len(row.input_features), axis = 1)
 
 restricted_classical_songs = restricted_classical_songs[restricted_classical_songs.artist_name == "Bach Johann Sebastian"]
-#%%
+
+try:
+    rcs = pd.read_pickle("./restricted_relative_classical_songs_as_input.pkl")
+except:
+    restricted_classical_songs['chroma_progressions'] = restricted_classical_songs.apply(lambda row: get_chord_progressions_from_song(row.input_features),axis = 1)
+    rcs = restricted_classical_songs   
+    rcs['relative_features'] = rcs.apply(lambda row: midi_to_input_restricted(row.artist_name, row.song_name, row.key, row.mode, row.chroma_progressions), axis = 1)
+    rcs.to_pickle("./restricted_relative_classical_songs_as_input.pkl")
 #%%
 
 class BatchSongGeneratorRestricted(object):
     
-    def __init__(self, df, num_steps, batch_size, skip_step=5):
+    def __init__(self, df, num_steps, batch_size, skip_step=5, relative = False):
         self.df = df
         self.metadata = df.iloc[0]
-        self.data = df.iloc[0].input_features
+        if relative:
+            self.data = df.iloc[0].relative_features    
+        else:
+            self.data = df.iloc[0].input_features
         self.spotify_features = self.get_spotify_features()
         self.num_steps = num_steps
         self.batch_size = batch_size
         self.song_idx = 0
         self.current_idx = 0
         self.skip_step = skip_step
+        self.input_size = 88 if relative else 63
+        self.relative = relative
         
     def get_duration_feature(self,duration):
         # To represent the duration in a categorical format
@@ -414,7 +425,7 @@ class BatchSongGeneratorRestricted(object):
         
     def generate(self):
         # input 37 for notes, 17 for duration, 9 for spotify features
-        x = np.zeros((self.batch_size, self.num_steps, 63))
+        x = np.zeros((self.batch_size, self.num_steps, self.input_size))
         # output 37 for notes, 17 for duration 
         y1 = np.zeros((self.batch_size, self.num_steps, 37))
         y2 = np.zeros((self.batch_size, self.num_steps, 17))
@@ -425,10 +436,16 @@ class BatchSongGeneratorRestricted(object):
                     self.song_idx += 1
                     if(len(self.df) == self.song_idx):
                         self.song_idx = 0
-                    self.data = self.df.iloc[self.song_idx].input_features
+                    if relative:
+                        self.data = df.iloc[self.song_idx].relative_features    
+                    else:
+                        self.data = df.iloc[self.song_idx].input_features
                     self.metadata = self.df.iloc[self.song_idx]
                     self.spotify_features = self.get_spotify_features()
-                temp_x = [np.concatenate((x_samp[:37], self.get_duration_feature(x_samp[37]),self.spotify_features),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
+                if self.relative:
+                    temp_x = [np.concatenate((x_samp[:37], self.get_duration_feature(x_samp[37]),self.spotify_features,self.metadata.chroma_progressions[self.current_idx//16]),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
+                else:
+                    temp_x = [np.concatenate((x_samp[:37], self.get_duration_feature(x_samp[37]),self.spotify_features),axis=0) for x_samp in self.data[self.current_idx:self.current_idx + self.num_steps]]
                 x[i, :, :] = temp_x
                 temp_y1 = [ y_samp[:37] for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
                 temp_y2 = [ self.get_duration_feature(y_samp[37]) for y_samp in self.data[self.current_idx + 1:self.current_idx + self.num_steps + 1]]
@@ -439,12 +456,13 @@ class BatchSongGeneratorRestricted(object):
             yield x, [y1,y2]   
 #%% Split Songs
 
-msk = np.random.rand(len(restricted_classical_songs)) 
+msk = np.random.rand(len(rcs)) 
 
-train = restricted_classical_songs[msk < 0.8]
-valid = restricted_classical_songs[msk >= 0.8]
+train = rcs[msk < 0.8]
+valid = rcs[msk >= 0.8]
 
 #%% Build the songs model
+
 
 num_steps = 32
 hidden_size = 512
@@ -452,27 +470,29 @@ batch_size = 20
 num_epochs = 20
 results=[]
 dropout = 0.5
+relative = True
+input_size = 88 if relative else 63
  
-train_data_generator = BatchSongGeneratorRestricted(train, num_steps, batch_size, skip_step=1)
-validation_data_generator = BatchSongGeneratorRestricted(valid, num_steps, batch_size, skip_step=1)
+train_data_generator = BatchSongGeneratorRestricted(train, num_steps, batch_size, skip_step=1,relative=True)
+validation_data_generator = BatchSongGeneratorRestricted(valid, num_steps, batch_size, skip_step=1,relative=True)
 
-a = Input(shape = (num_steps, 63))
-d1 = Dense(hidden_size,input_shape=(num_steps,63))(a)
+a = Input(shape = (num_steps, input_size))
+d1 = Dense(hidden_size,input_shape=(num_steps,input_size))(a)
 l1 = LSTM(hidden_size, return_sequences=True)(d1)
 bn = BatchNormalization() (l1)
 do1 = Dropout(dropout)(bn)
 l2 = LSTM(hidden_size, return_sequences=True)(do1)
 do2 = Dropout(dropout)(l2)
 td1 = TimeDistributed(Dense(37, activation = 'sigmoid'))(do2)
-td2 = TimeDistributed(Dense(17, activation = 'softmax'))(do2)
+td2 = TimeDistributed(Dense(17, activation = 'softmax'))(td1)
 out1 = Lambda(lambda x:x, name = "notes")(td1)
 out2 = Lambda(lambda x:x, name = "times")(td2)
 model = Model(inputs =a, outputs = [out1 , out2])
 
 #%% Start the training with evaluation after each epoch
 
-model.compile(loss=['binary_crossentropy','categorical_crossentropy'], loss_weights = [5, 0.2], optimizer='adam', metrics={'notes':'binary_accuracy','times':'categorical_accuracy'})
-checkpointer = ModelCheckpoint(filepath='./song_checkpoints/restricted_model_note.hdf5', verbose=2, period=10)
+model.compile(loss=['binary_crossentropy','categorical_crossentropy'], loss_weights = [30, 1], optimizer='adam', metrics={'notes':'binary_accuracy','times':'categorical_accuracy'})
+checkpointer = ModelCheckpoint(filepath='./song_checkpoints/relative_model.hdf5', verbose=2, period=10)
 
 model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train.shape[0] * num_steps)//(batch_size), num_epochs,
                     validation_data=validation_data_generator.generate(),
@@ -480,8 +500,11 @@ model.fit_generator(train_data_generator.generate(), (sum(train['length'])-train
                     callbacks=[checkpointer],verbose=1)
 
 #%%
+model = load_model('./song_checkpoints/restricted_model_note.hdf5')
+#%%
 
-threshold = 0.1
+
+threshold = 0.07
 validation_data_generator = BatchSongGeneratorRestricted(valid, num_steps, 1, skip_step=1)
 
 dummy_iters = 512
