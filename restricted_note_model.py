@@ -437,9 +437,9 @@ class BatchSongGeneratorRestricted(object):
                     if(len(self.df) == self.song_idx):
                         self.song_idx = 0
                     if relative:
-                        self.data = df.iloc[self.song_idx].relative_features    
+                        self.data = self.df.iloc[self.song_idx].relative_features    
                     else:
-                        self.data = df.iloc[self.song_idx].input_features
+                        self.data = self.df.iloc[self.song_idx].input_features
                     self.metadata = self.df.iloc[self.song_idx]
                     self.spotify_features = self.get_spotify_features()
                 if self.relative:
