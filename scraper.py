@@ -48,7 +48,7 @@ def fetch_task(self,song):
             df_lock.release()
 
 
-token = "BQAjk2_uvE4PPW150SDUgqHi7EVNwthMe1pDF2BxI4luJOjfBeRdLz0E15lpzDXmnCI1L_tawBwTwVXfG4YHOgQUL_3ea7wgFD_CGC4D_lgsPM5YnuJ_265k5nQ8HqWX2kd3z1jqTb9gFlSMoRFVrnqKLRbXMZewou1949Mw4AGKIKFd3Vio2_PFaTFEkzEkoROZECHRX2Fx3fXrVJOD9C2aQjDUXIkLzcIVFQDS9LyDUO8hqeLAiZqpLDbQ2Cc-QuAnwDS4UA9mkOvjM-hf"
+token = sys.argv[1]
 midi_dir = "./clean_midi"
 not_found=0
 
