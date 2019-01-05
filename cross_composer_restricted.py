@@ -171,7 +171,7 @@ except FileNotFoundError:
     songs.to_pickle("./cross_composer_features.pkl")
     
 #%%
-class KerasBatchGenerator(object):
+class CrossComposerRestricted(object):
     
     def __init__(self, df, num_steps, batch_size, skip_step=1):
         self.df = df
@@ -226,7 +226,7 @@ class KerasBatchGenerator(object):
             yield x, y
             
 #%%
-class KerasBatchGeneratorModeless(object):
+class CrossComposerRestrictedModeless(object):
     
     def __init__(self, df, num_steps, batch_size, skip_step=1):
         self.df = df
@@ -273,9 +273,9 @@ results=[]
 dropout = 0.5
 #%%
     
-train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
-validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
-test_data_generator = KerasBatchGenerator(test, num_steps, batch_size, skip_step=1)
+train_data_generator = CrossComposerRestricted(train, num_steps, batch_size, skip_step=1)
+validation_data_generator = CrossComposerRestricted(valid, num_steps, batch_size, skip_step=1)
+test_data_generator = CrossComposerRestricted(test, num_steps, batch_size, skip_step=1)
 
 #%%
 
@@ -302,7 +302,7 @@ results.append(scores[1])
 
 #%%
 dummy_iters = 0
-example_test_generator = KerasBatchGenerator(test, num_steps, 1,
+example_test_generator = CrossComposerRestricted(test, num_steps, 1,
                                                      skip_step=1)
 
 model = load_model('./training_checkpoints/model_final.hdf5')

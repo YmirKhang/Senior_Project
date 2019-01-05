@@ -171,7 +171,7 @@ except FileNotFoundError:
     songs = songs[songs['length'] > 10 ]
     songs.to_pickle("./cross_composer_features.pkl")
 #%%
-class KerasBatchGenerator(object):
+class CrossComposerGenerator(object):
     
     def __init__(self, df, num_steps, batch_size, skip_step=5):
         self.df = df
@@ -228,13 +228,14 @@ hidden_size = 64
 batch_size = 20
 num_epochs = 25
 results=[]
+dropout = 0.5
 
 #%%
 
 
 print('training for hidden: ' +str(hidden_size) +' dropout: ' + str(dropout) + ' num_steps: '+ str(num_steps))
-train_data_generator = KerasBatchGenerator(train, num_steps, batch_size, skip_step=1)
-validation_data_generator = KerasBatchGenerator(valid, num_steps, batch_size, skip_step=1)
+train_data_generator = CrossComposerGenerator(train, num_steps, batch_size, skip_step=1)
+validation_data_generator = CrossComposerGenerator(valid, num_steps, batch_size, skip_step=1)
 
 model = Sequential()
 model.add(Dense(hidden_size,input_shape=(num_steps,14)))
