@@ -54,6 +54,8 @@ except:
     rcs.to_pickle("./restricted_relative_classical_songs_as_input.pkl")
 #%% Split Songs
 
+rcs = rcs[rcs.relative_features.isnull() == False]
+
 msk = np.random.rand(len(rcs)) 
 
 train = rcs[msk < 0.8]
