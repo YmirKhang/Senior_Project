@@ -3,3 +3,5 @@ clean_midi_init
 .idea
 .ipynb_checkpoints
 **/*.hdf5
+__pycache__/
+**/*.pkl
